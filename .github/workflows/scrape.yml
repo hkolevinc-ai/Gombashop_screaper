@@ -1,13 +1,36 @@
-name: Scrape GombaShop sites
+name: GombaShop Scraper v2
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 5 * * 1"
+    inputs:
+      search_backend:
+        description: "Search backend: auto, serpapi, bing, google_cse, duckduckgo, none"
+        required: true
+        default: "auto"
+      target_candidates:
+        description: "Candidate domains to discover before validation"
+        required: true
+        default: "8000"
+      max_queries:
+        description: "Max generated search queries"
+        required: true
+        default: "220"
+      include_rejected:
+        description: "Include rejected candidates sheet"
+        required: true
+        default: "true"
+
+env:
+  SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+  BING_SEARCH_API_KEY: ${{ secrets.BING_SEARCH_API_KEY }}
+  GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+  GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,13 +44,19 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run scraper
-        env:
-          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
         run: |
+          INCLUDE=""
+          if [ "${{ github.event.inputs.include_rejected }}" = "true" ]; then INCLUDE="--include-rejected"; fi
           python gombashop_scraper.py \
-            --search-backend auto \
+            --search-backend "${{ github.event.inputs.search_backend }}" \
+            --target-candidates "${{ github.event.inputs.target_candidates }}" \
+            --max-queries "${{ github.event.inputs.max_queries }}" \
+            --search-limit-per-query 100 \
+            --ct-gombashop \
+            --urlscan-gombashop \
+            --workers 20 \
             --out gombashop_sites.xlsx \
-            --include-rejected
+            $INCLUDE
 
       - name: Upload Excel artifact
         uses: actions/upload-artifact@v4
