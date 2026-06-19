@@ -1,4 +1,4 @@
-name: GombaShop Scraper v2
+name: GombaShop Scraper v3
 
 on:
   workflow_dispatch:
@@ -19,6 +19,13 @@ on:
         description: "Include rejected candidates sheet"
         required: true
         default: "true"
+      contact_pages:
+        description: "Contact/legal pages per site. Use 2-4 for big runs."
+        required: true
+        default: "3"
+
+permissions:
+  contents: read
 
 env:
   SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
@@ -41,10 +48,12 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt
 
       - name: Run scraper
+        continue-on-error: true
         run: |
+          set -o pipefail
           INCLUDE=""
           if [ "${{ github.event.inputs.include_rejected }}" = "true" ]; then INCLUDE="--include-rejected"; fi
           python gombashop_scraper.py \
@@ -55,11 +64,28 @@ jobs:
             --ct-gombashop \
             --urlscan-gombashop \
             --workers 20 \
+            --contact-pages "${{ github.event.inputs.contact_pages }}" \
+            --search-delay 0.2 \
+            --request-delay 0.02 \
+            --checkpoint-csv gombashop_progress.csv \
+            --checkpoint-every 50 \
             --out gombashop_sites.xlsx \
-            $INCLUDE
+            $INCLUDE 2>&1 | tee scraper.log
 
-      - name: Upload Excel artifact
+      - name: List output files
+        if: always()
+        run: |
+          ls -lah
+          test -f gombashop_sites.xlsx && echo "XLSX generated" || echo "XLSX not generated"
+          test -f gombashop_progress.csv && echo "Progress CSV generated" || echo "Progress CSV not generated"
+
+      - name: Upload scraper outputs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gombashop-sites
-          path: gombashop_sites.xlsx
+          path: |
+            gombashop_sites.xlsx
+            gombashop_progress.csv
+            scraper.log
+          if-no-files-found: warn
